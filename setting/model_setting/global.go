@@ -33,7 +33,11 @@ func (p ChatCompletionsToResponsesPolicy) IsChannelEnabled(channelID int, channe
 }
 
 type GlobalSettings struct {
-	PassThroughRequestEnabled        bool                             `json:"pass_through_request_enabled"`
+	PassThroughRequestEnabled bool `json:"pass_through_request_enabled"`
+	// OpenAIAsAnthropicEnabled 用于启用「OpenAI → Anthropic」兼容：
+	// 在上游为 OpenAI(OpenAI 兼容) 时，允许通过 /v1/messages 提供 Anthropic Messages API 的响应格式（例如 Claude Code）。
+	// 该行为默认关闭，以避免产生意料之外的兼容行为。
+	OpenAIAsAnthropicEnabled         bool                             `json:"openai_as_anthropic_enabled"`
 	ThinkingModelBlacklist           []string                         `json:"thinking_model_blacklist"`
 	ChatCompletionsToResponsesPolicy ChatCompletionsToResponsesPolicy `json:"chat_completions_to_responses_policy"`
 }
@@ -41,6 +45,7 @@ type GlobalSettings struct {
 // 默认配置
 var defaultOpenaiSettings = GlobalSettings{
 	PassThroughRequestEnabled: false,
+	OpenAIAsAnthropicEnabled:  false,
 	ThinkingModelBlacklist: []string{
 		"moonshotai/kimi-k2-thinking",
 		"kimi-k2-thinking",

@@ -25,6 +25,17 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	info.InitChannelMeta(c)
 
+	// OpenAI → Anthropic 兼容行为默认关闭：
+	// 仅在开启 global.openai_as_anthropic_enabled 后，才允许使用 /v1/messages 走 OpenAI 上游并返回 Anthropic 格式（用于 Claude Code 等客户端）。
+	if info.ApiType == constant.APITypeOpenAI && !model_setting.GetGlobalSettings().OpenAIAsAnthropicEnabled {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("OpenAI-as-Anthropic compatibility is disabled; enable `global.openai_as_anthropic_enabled` to use `/v1/messages` with OpenAI upstream channels"),
+			types.ErrorCodeAccessDenied,
+			http.StatusForbidden,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
+
 	claudeReq, ok := info.Request.(*dto.ClaudeRequest)
 
 	if !ok {
@@ -110,9 +121,15 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 	}
 
+	useResponses := service.ShouldChatCompletionsUseResponsesGlobal(info.ChannelId, info.ChannelType, info.OriginModelName)
+	if info.ApiType == constant.APITypeOpenAI && model_setting.GetGlobalSettings().OpenAIAsAnthropicEnabled {
+		// Prefer Responses API when serving Anthropic Messages via OpenAI upstream.
+		useResponses = true
+	}
+
 	if !model_setting.GetGlobalSettings().PassThroughRequestEnabled &&
 		!info.ChannelSetting.PassThroughBodyEnabled &&
-		service.ShouldChatCompletionsUseResponsesGlobal(info.ChannelId, info.ChannelType, info.OriginModelName) {
+		useResponses {
 		openAIRequest, convErr := service.ClaudeToOpenAIRequest(*request, info)
 		if convErr != nil {
 			return types.NewError(convErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -120,11 +137,13 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 		usage, newApiErr := chatCompletionsViaResponses(c, info, adaptor, openAIRequest)
 		if newApiErr != nil {
-			return newApiErr
+			if !shouldFallbackToChatCompletions(info, newApiErr) {
+				return newApiErr
+			}
+		} else {
+			service.PostClaudeConsumeQuota(c, info, usage)
+			return nil
 		}
-
-		service.PostClaudeConsumeQuota(c, info, usage)
-		return nil
 	}
 
 	var requestBody io.Reader
@@ -193,4 +212,45 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	service.PostClaudeConsumeQuota(c, info, usage.(*dto.Usage))
 	return nil
+}
+
+func shouldFallbackToChatCompletions(info *relaycommon.RelayInfo, err *types.NewAPIError) bool {
+	if info == nil || err == nil {
+		return false
+	}
+	// Avoid fallback if we've already sent any stream data.
+	if info.IsStream && info.SendResponseCount > 0 {
+		return false
+	}
+	switch err.StatusCode {
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return true
+	}
+	lower := strings.ToLower(err.Error())
+	if lower == "" {
+		return false
+	}
+	endpointHints := []string{
+		"invalid url",
+		"unknown endpoint",
+		"unsupported endpoint",
+		"not supported",
+		"not implemented",
+		"no such endpoint",
+		"not found",
+		"unknown path",
+	}
+	for _, hint := range endpointHints {
+		if strings.Contains(lower, hint) {
+			return true
+		}
+	}
+	if err.StatusCode == http.StatusBadRequest {
+		if strings.Contains(lower, "unrecognized") || strings.Contains(lower, "unknown") || strings.Contains(lower, "unexpected") {
+			if strings.Contains(lower, "input") || strings.Contains(lower, "responses") {
+				return true
+			}
+		}
+	}
+	return false
 }

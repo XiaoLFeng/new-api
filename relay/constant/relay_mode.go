@@ -58,6 +58,10 @@ func Path2RelayMode(path string) int {
 	relayMode := RelayModeUnknown
 	if strings.HasPrefix(path, "/v1/chat/completions") || strings.HasPrefix(path, "/pg/chat/completions") {
 		relayMode = RelayModeChatCompletions
+	} else if strings.HasPrefix(path, "/v1/messages") {
+		// Anthropic Messages API：
+		// 内部按「类 ChatCompletions」处理，便于复用下游通用逻辑（例如流式 token 兜底统计等）。
+		relayMode = RelayModeChatCompletions
 	} else if strings.HasPrefix(path, "/v1/completions") {
 		relayMode = RelayModeCompletions
 	} else if strings.HasPrefix(path, "/v1/embeddings") {

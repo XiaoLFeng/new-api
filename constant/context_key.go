@@ -56,6 +56,9 @@ const (
 
 	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"
 
+	// ContextKeyEmptyStreamRetryDelayMs stores the delay (ms) before retrying after an empty stream response.
+	ContextKeyEmptyStreamRetryDelayMs ContextKey = "empty_stream_retry_delay_ms"
+
 	// ContextKeyFileSourcesToCleanup stores file sources that need cleanup when request ends
 	ContextKeyFileSourcesToCleanup ContextKey = "file_sources_to_cleanup"
 
