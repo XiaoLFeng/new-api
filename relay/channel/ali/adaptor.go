@@ -14,6 +14,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +24,13 @@ type Adaptor struct {
 	IsSyncImageModel bool
 }
 
+/*
+	var syncModels = []string{
+		"z-image",
+		"qwen-image",
+		"wan2.6",
+	}
+*/
 func supportsAliAnthropicMessages(modelName string) bool {
 	// Only models with the "qwen" designation can use the Claude-compatible interface; others require conversion.
 	return strings.Contains(strings.ToLower(modelName), "qwen")
@@ -35,12 +43,7 @@ var syncModels = []string{
 }
 
 func isSyncImageModel(modelName string) bool {
-	for _, m := range syncModels {
-		if strings.Contains(modelName, m) {
-			return true
-		}
-	}
-	return false
+	return model_setting.IsSyncImageModel(modelName)
 }
 
 func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeminiChatRequest) (any, error) {
@@ -81,6 +84,8 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 			fullRequestURL = fmt.Sprintf("%s/compatible-mode/v1/embeddings", info.ChannelBaseUrl)
 		case constant.RelayModeRerank:
 			fullRequestURL = fmt.Sprintf("%s/api/v1/services/rerank/text-rerank/text-rerank", info.ChannelBaseUrl)
+		case constant.RelayModeResponses:
+			fullRequestURL = fmt.Sprintf("%s/api/v2/apps/protocols/compatible-mode/v1/responses", info.ChannelBaseUrl)
 		case constant.RelayModeImagesGenerations:
 			if isSyncImageModel(info.OriginModelName) {
 				fullRequestURL = fmt.Sprintf("%s/api/v1/services/aigc/multimodal-generation/generation", info.ChannelBaseUrl)
@@ -207,8 +212,7 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	//TODO implement me
-	return nil, errors.New("not implemented")
+	return request, nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
@@ -219,11 +223,8 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	switch info.RelayFormat {
 	case types.RelayFormatClaude:
 		if supportsAliAnthropicMessages(info.UpstreamModelName) {
-			if info.IsStream {
-				return claude.ClaudeStreamHandler(c, resp, info, claude.RequestModeMessage)
-			}
-
-			return claude.ClaudeHandler(c, resp, info, claude.RequestModeMessage)
+			adaptor := claude.Adaptor{}
+			return adaptor.DoResponse(c, resp, info)
 		}
 
 		adaptor := openai.Adaptor{}
