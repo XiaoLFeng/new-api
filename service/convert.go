@@ -181,7 +181,23 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 			}
 
 			if len(mediaMessages) > 0 && len(toolCalls) == 0 {
-				openAIMessage.SetMediaContent(mediaMessages)
+				allText := true
+				var textBuilder strings.Builder
+				for _, media := range mediaMessages {
+					if media.Type != "text" || media.Text == "" {
+						allText = false
+						break
+					}
+					if textBuilder.Len() > 0 {
+						textBuilder.WriteString("\n")
+					}
+					textBuilder.WriteString(media.Text)
+				}
+				if allText {
+					openAIMessage.SetStringContent(textBuilder.String())
+				} else {
+					openAIMessage.SetMediaContent(mediaMessages)
+				}
 			}
 		}
 		if len(openAIMessage.ParseContent()) > 0 || len(openAIMessage.ToolCalls) > 0 {

@@ -127,6 +127,17 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		useResponses = true
 	}
 
+	if info.ApiType == constant.APITypeOpenAI && model_setting.GetGlobalSettings().OpenAIAsAnthropicEnabled {
+		if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("pass-through is not supported for OpenAI-as-Anthropic; disable pass-through to use `/v1/messages` with OpenAI Responses"),
+				types.ErrorCodeAccessDenied,
+				http.StatusForbidden,
+				types.ErrOptionWithSkipRetry(),
+			)
+		}
+	}
+
 	if !model_setting.GetGlobalSettings().PassThroughRequestEnabled &&
 		!info.ChannelSetting.PassThroughBodyEnabled &&
 		useResponses {
@@ -137,13 +148,10 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 		usage, newApiErr := chatCompletionsViaResponses(c, info, adaptor, openAIRequest)
 		if newApiErr != nil {
-			if !shouldFallbackToChatCompletions(info, newApiErr) {
-				return newApiErr
-			}
-		} else {
-			service.PostClaudeConsumeQuota(c, info, usage)
-			return nil
+			return newApiErr
 		}
+		service.PostClaudeConsumeQuota(c, info, usage)
+		return nil
 	}
 
 	var requestBody io.Reader
@@ -212,45 +220,4 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	service.PostClaudeConsumeQuota(c, info, usage.(*dto.Usage))
 	return nil
-}
-
-func shouldFallbackToChatCompletions(info *relaycommon.RelayInfo, err *types.NewAPIError) bool {
-	if info == nil || err == nil {
-		return false
-	}
-	// Avoid fallback if we've already sent any stream data.
-	if info.IsStream && info.SendResponseCount > 0 {
-		return false
-	}
-	switch err.StatusCode {
-	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
-		return true
-	}
-	lower := strings.ToLower(err.Error())
-	if lower == "" {
-		return false
-	}
-	endpointHints := []string{
-		"invalid url",
-		"unknown endpoint",
-		"unsupported endpoint",
-		"not supported",
-		"not implemented",
-		"no such endpoint",
-		"not found",
-		"unknown path",
-	}
-	for _, hint := range endpointHints {
-		if strings.Contains(lower, hint) {
-			return true
-		}
-	}
-	if err.StatusCode == http.StatusBadRequest {
-		if strings.Contains(lower, "unrecognized") || strings.Contains(lower, "unknown") || strings.Contains(lower, "unexpected") {
-			if strings.Contains(lower, "input") || strings.Contains(lower, "responses") {
-				return true
-			}
-		}
-	}
-	return false
 }
