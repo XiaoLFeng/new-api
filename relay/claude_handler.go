@@ -25,6 +25,17 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	info.InitChannelMeta(c)
 
+	// OpenAI → Anthropic 兼容行为默认关闭：
+	// 仅在开启 global.openai_as_anthropic_enabled 后，才允许使用 /v1/messages 走 OpenAI 上游并返回 Anthropic 格式（用于 Claude Code 等客户端）。
+	if info.ApiType == constant.APITypeOpenAI && !model_setting.GetGlobalSettings().OpenAIAsAnthropicEnabled {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("OpenAI-as-Anthropic compatibility is disabled; enable `global.openai_as_anthropic_enabled` to use `/v1/messages` with OpenAI upstream channels"),
+			types.ErrorCodeAccessDenied,
+			http.StatusForbidden,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
+
 	claudeReq, ok := info.Request.(*dto.ClaudeRequest)
 
 	if !ok {
