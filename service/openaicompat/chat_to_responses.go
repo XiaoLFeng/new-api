@@ -383,11 +383,13 @@ func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*d
 		Metadata:          req.Metadata,
 	}
 
-	if req.ReasoningEffort != "" {
-		out.Reasoning = &dto.Reasoning{
-			Effort:  req.ReasoningEffort,
-			Summary: "detailed",
-		}
+	reasoningEffort := strings.TrimSpace(req.ReasoningEffort)
+	if reasoningEffort == "" {
+		reasoningEffort = "high"
+	}
+	out.Reasoning = &dto.Reasoning{
+		Effort:  reasoningEffort,
+		Summary: "detailed",
 	}
 
 	return out, nil
