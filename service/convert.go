@@ -14,6 +14,25 @@ import (
 	"github.com/samber/lo"
 )
 
+func mapClaudeEffortToReasoningEffort(effort string) string {
+	normalized := strings.ToLower(strings.TrimSpace(effort))
+	if normalized == "" {
+		return ""
+	}
+	switch normalized {
+	case "max":
+		return "xhigh"
+	case "high":
+		return "xhigh"
+	case "medium":
+		return "high"
+	case "low":
+		return "medium"
+	default:
+		return normalized
+	}
+}
+
 func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.RelayInfo) (*dto.GeneralOpenAIRequest, error) {
 	openAIRequest := dto.GeneralOpenAIRequest{
 		Model:       claudeRequest.Model,
@@ -33,6 +52,17 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 	}
 
 	isOpenRouter := info.ChannelType == constant.ChannelTypeOpenRouter
+
+	if len(claudeRequest.OutputConfig) > 0 {
+		var outputConfig struct {
+			Effort string `json:"effort"`
+		}
+		if err := common.Unmarshal(claudeRequest.OutputConfig, &outputConfig); err == nil {
+			if effort := mapClaudeEffortToReasoningEffort(outputConfig.Effort); effort != "" {
+				openAIRequest.ReasoningEffort = effort
+			}
+		}
+	}
 
 	if claudeRequest.Thinking != nil && claudeRequest.Thinking.Type == "enabled" {
 		if isOpenRouter {
