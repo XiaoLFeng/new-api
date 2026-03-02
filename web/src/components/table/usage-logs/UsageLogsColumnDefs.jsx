@@ -217,6 +217,14 @@ function renderFirstUseTime(type, t) {
   }
 }
 
+function renderTPS(value, t) {
+  const tps = Number(value);
+  if (!Number.isFinite(tps) || tps <= 0) {
+    return '-';
+  }
+  return `${tps.toFixed(2)} ${t('tok/s')}`;
+}
+
 function renderBillingTag(record, t) {
   const other = getLogOther(record.other);
   if (other?.billing_source === 'subscription') {
@@ -564,6 +572,17 @@ export const getLogsColumns = ({
             </>
           );
         }
+      },
+    },
+    {
+      key: COLUMN_KEYS.TPS,
+      title: t('TPS'),
+      dataIndex: 'tps',
+      render: (text, record, index) => {
+        if (record.type !== 2) {
+          return <></>;
+        }
+        return <span>{renderTPS(text, t)}</span>;
       },
     },
     {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -17,26 +19,27 @@ import (
 )
 
 type Log struct {
-	Id               int    `json:"id" gorm:"index:idx_created_at_id,priority:1;index:idx_user_id_id,priority:2"`
-	UserId           int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
-	CreatedAt        int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:2;index:idx_created_at_type"`
-	Type             int    `json:"type" gorm:"index:idx_created_at_type"`
-	Content          string `json:"content"`
-	Username         string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
-	TokenName        string `json:"token_name" gorm:"index;default:''"`
-	ModelName        string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
-	Quota            int    `json:"quota" gorm:"default:0"`
-	PromptTokens     int    `json:"prompt_tokens" gorm:"default:0"`
-	CompletionTokens int    `json:"completion_tokens" gorm:"default:0"`
-	UseTime          int    `json:"use_time" gorm:"default:0"`
-	IsStream         bool   `json:"is_stream"`
-	ChannelId        int    `json:"channel" gorm:"index"`
-	ChannelName      string `json:"channel_name" gorm:"->"`
-	TokenId          int    `json:"token_id" gorm:"default:0;index"`
-	Group            string `json:"group" gorm:"index"`
-	Ip               string `json:"ip" gorm:"index;default:''"`
-	RequestId        string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
-	Other            string `json:"other"`
+	Id               int     `json:"id" gorm:"index:idx_created_at_id,priority:1;index:idx_user_id_id,priority:2"`
+	UserId           int     `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
+	CreatedAt        int64   `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:2;index:idx_created_at_type"`
+	Type             int     `json:"type" gorm:"index:idx_created_at_type"`
+	Content          string  `json:"content"`
+	Username         string  `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
+	TokenName        string  `json:"token_name" gorm:"index;default:''"`
+	ModelName        string  `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
+	Quota            int     `json:"quota" gorm:"default:0"`
+	PromptTokens     int     `json:"prompt_tokens" gorm:"default:0"`
+	CompletionTokens int     `json:"completion_tokens" gorm:"default:0"`
+	UseTime          int     `json:"use_time" gorm:"default:0"`
+	Tps              float64 `json:"tps" gorm:"default:0"`
+	IsStream         bool    `json:"is_stream"`
+	ChannelId        int     `json:"channel" gorm:"index"`
+	ChannelName      string  `json:"channel_name" gorm:"->"`
+	TokenId          int     `json:"token_id" gorm:"default:0;index"`
+	Group            string  `json:"group" gorm:"index"`
+	Ip               string  `json:"ip" gorm:"index;default:''"`
+	RequestId        string  `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
+	Other            string  `json:"other"`
 }
 
 // don't use iota, avoid change log type value
@@ -148,6 +151,79 @@ type RecordConsumeLogParams struct {
 	Other            map[string]interface{} `json:"other"`
 }
 
+func getFloat64FromAny(value interface{}) (float64, bool) {
+	switch converted := value.(type) {
+	case float64:
+		return converted, true
+	case float32:
+		return float64(converted), true
+	case int:
+		return float64(converted), true
+	case int8:
+		return float64(converted), true
+	case int16:
+		return float64(converted), true
+	case int32:
+		return float64(converted), true
+	case int64:
+		return float64(converted), true
+	case uint:
+		return float64(converted), true
+	case uint8:
+		return float64(converted), true
+	case uint16:
+		return float64(converted), true
+	case uint32:
+		return float64(converted), true
+	case uint64:
+		return float64(converted), true
+	case string:
+		parsed, err := strconv.ParseFloat(converted, 64)
+		if err != nil {
+			return 0, false
+		}
+		return parsed, true
+	default:
+		return 0, false
+	}
+}
+
+func getFirstResponseTimeMs(other map[string]interface{}) (float64, bool) {
+	if other == nil {
+		return 0, false
+	}
+	rawFRT, ok := other["frt"]
+	if !ok {
+		return 0, false
+	}
+	frtMs, ok := getFloat64FromAny(rawFRT)
+	if !ok || frtMs <= 0 {
+		return 0, false
+	}
+	return frtMs, true
+}
+
+func calcLogTPS(promptTokens int, completionTokens int, useTimeSeconds int, other map[string]interface{}) float64 {
+	totalTokens := promptTokens + completionTokens
+	if totalTokens <= 1 || useTimeSeconds <= 0 {
+		return 0
+	}
+
+	effectiveDurationSeconds := float64(useTimeSeconds)
+	if frtMs, ok := getFirstResponseTimeMs(other); ok {
+		effectiveDurationSeconds -= frtMs / 1000.0
+	}
+	if effectiveDurationSeconds <= 0 {
+		return 0
+	}
+
+	tps := float64(totalTokens-1) / effectiveDurationSeconds
+	if tps <= 0 || math.IsNaN(tps) || math.IsInf(tps, 0) {
+		return 0
+	}
+	return math.Round(tps*10000) / 10000
+}
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	if !common.LogConsumeEnabled {
 		return
@@ -177,6 +253,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		ChannelId:        params.ChannelId,
 		TokenId:          params.TokenId,
 		UseTime:          params.UseTimeSeconds,
+		Tps:              calcLogTPS(params.PromptTokens, params.CompletionTokens, params.UseTimeSeconds, params.Other),
 		IsStream:         params.IsStream,
 		Group:            params.Group,
 		Ip: func() string {
