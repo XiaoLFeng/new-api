@@ -203,21 +203,24 @@ func getFirstResponseTimeMs(other map[string]interface{}) (float64, bool) {
 	return frtMs, true
 }
 
-func calcLogTPS(promptTokens int, completionTokens int, useTimeSeconds int, other map[string]interface{}) float64 {
-	totalTokens := promptTokens + completionTokens
-	if totalTokens <= 1 || useTimeSeconds <= 0 {
+func calcLogTPS(_ int, completionTokens int, useTimeSeconds int, other map[string]interface{}) float64 {
+	if completionTokens <= 0 || useTimeSeconds <= 0 {
 		return 0
 	}
 
 	effectiveDurationSeconds := float64(useTimeSeconds)
 	if frtMs, ok := getFirstResponseTimeMs(other); ok {
 		effectiveDurationSeconds -= frtMs / 1000.0
+		if completionTokens <= 1 {
+			return 0
+		}
+		completionTokens -= 1
 	}
 	if effectiveDurationSeconds <= 0 {
 		return 0
 	}
 
-	tps := float64(totalTokens-1) / effectiveDurationSeconds
+	tps := float64(completionTokens) / effectiveDurationSeconds
 	if tps <= 0 || math.IsNaN(tps) || math.IsInf(tps, 0) {
 		return 0
 	}

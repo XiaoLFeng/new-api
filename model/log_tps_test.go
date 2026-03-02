@@ -21,7 +21,7 @@ func TestCalcLogTPS(t *testing.T) {
 			completionTokens: 50,
 			useTimeSeconds:   10,
 			other:            map[string]interface{}{"frt": 2000.0},
-			expect:           18.625,
+			expect:           6.125,
 		},
 		{
 			name:             "without_frt",
@@ -29,7 +29,7 @@ func TestCalcLogTPS(t *testing.T) {
 			completionTokens: 50,
 			useTimeSeconds:   10,
 			other:            map[string]interface{}{},
-			expect:           14.9,
+			expect:           5,
 		},
 		{
 			name:             "invalid_frt_string",
@@ -37,7 +37,7 @@ func TestCalcLogTPS(t *testing.T) {
 			completionTokens: 50,
 			useTimeSeconds:   10,
 			other:            map[string]interface{}{"frt": "invalid"},
-			expect:           14.9,
+			expect:           5,
 		},
 		{
 			name:             "effective_duration_not_positive",
@@ -61,7 +61,7 @@ func TestCalcLogTPS(t *testing.T) {
 			completionTokens: 4,
 			useTimeSeconds:   3,
 			other:            map[string]interface{}{"frt": 700.0},
-			expect:           5.6522,
+			expect:           1.3043,
 		},
 	}
 
