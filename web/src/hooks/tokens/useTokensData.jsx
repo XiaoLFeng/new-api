@@ -30,7 +30,7 @@ import {
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 
-export const useTokensData = (openFluentNotification) => {
+export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
   const { t } = useTranslation();
 
   // Basic state
@@ -124,6 +124,10 @@ export const useTokensData = (openFluentNotification) => {
 
   // Open link function for chat integrations
   const onOpenLink = async (type, url, record) => {
+    if (url && url.startsWith('ccswitch')) {
+      openCCSwitchModal(record.key);
+      return;
+    }
     if (url && url.startsWith('fluent')) {
       openFluentNotification(record.key);
       return;
@@ -147,6 +151,16 @@ export const useTokensData = (openFluentNotification) => {
         encodeToBase64(JSON.stringify(cherryConfig)),
       );
       url = url.replaceAll('{cherryConfig}', encodedConfig);
+    } else if (url.includes('{aionuiConfig}') === true) {
+      let aionuiConfig = {
+        platform: 'new-api',
+        baseUrl: serverAddress,
+        apiKey: 'sk-' + record.key,
+      };
+      let encodedConfig = encodeURIComponent(
+        encodeToBase64(JSON.stringify(aionuiConfig)),
+      );
+      url = url.replaceAll('{aionuiConfig}', encodedConfig);
     } else {
       let encodedServerAddress = encodeURIComponent(serverAddress);
       url = url.replaceAll('{address}', encodedServerAddress);
@@ -191,6 +205,10 @@ export const useTokensData = (openFluentNotification) => {
 
   // Search tokens function
   const searchTokens = async (page = 1, size = pageSize) => {
+    const normalizedPage = Number.isInteger(page) && page > 0 ? page : 1;
+    const normalizedSize =
+      Number.isInteger(size) && size > 0 ? size : pageSize;
+
     const { searchKeyword, searchToken } = getFormValues();
     if (searchKeyword === '' && searchToken === '') {
       setSearchMode(false);
@@ -199,7 +217,7 @@ export const useTokensData = (openFluentNotification) => {
     }
     setSearching(true);
     const res = await API.get(
-      `/api/token/search?keyword=${encodeURIComponent(searchKeyword)}&token=${encodeURIComponent(searchToken)}&p=${page}&size=${size}`,
+      `/api/token/search?keyword=${encodeURIComponent(searchKeyword)}&token=${encodeURIComponent(searchToken)}&p=${normalizedPage}&size=${normalizedSize}`,
     );
     const { success, message, data } = res.data;
     if (success) {
